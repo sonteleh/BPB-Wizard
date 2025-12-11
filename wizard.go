@@ -63,17 +63,13 @@ func downloadFile(url, dest string) error {
 		return fmt.Errorf("error downloading worker.js: %s", resp.Status)
 	}
 
-	out, err := os.Create(dest)
+	content, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 
-	if _, err = io.Copy(out, resp.Body); err != nil {
-		return err
-	}
-
-	if _, err := out.WriteString(generateJunkCode()); err != nil {
+	finalContent := append(content, []byte(generateJunkCode())...)
+	if err := os.WriteFile(dest, finalContent, 0644); err != nil {
 		return err
 	}
 
@@ -96,7 +92,7 @@ func downloadWorker() error {
 		if err := downloadFile(workerURL, workerPath); err != nil {
 			failMessage("Failed to download worker.js\n")
 			log.Printf("%v\n", err)
-			if response := promptUser("Would you like to try again? (y/n): "); strings.ToLower(response) == "n" {
+			if response := promptUser("- Would you like to try again? (y/n): ", []string{"y", "n"}); strings.ToLower(response) == "n" {
 				os.Exit(0)
 			}
 			continue
@@ -235,24 +231,40 @@ func isValidSubURIPath(uri string) bool {
 	return true
 }
 
-func promptUser(prompt string) string {
-	fmt.Printf("%s %s", ask, prompt)
+func promptUser(prompt string, answers []string) string {
 	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		fmt.Printf("\n%s Exiting...\n", title)
-		if err == io.EOF {
-			os.Exit(0)
-		}
-		os.Exit(1)
-	}
 
-	return strings.TrimSpace(input)
+	for {
+		fmt.Printf("\n%s", prompt)
+		input, err := reader.ReadString('\n')
+
+		if err != nil {
+			fmt.Printf("\n%s Exiting...\n", title)
+			if err == io.EOF {
+				os.Exit(0)
+			}
+			os.Exit(1)
+		}
+
+		input = strings.TrimSpace(input)
+
+		if answers == nil {
+			return input
+		} else {
+			for _, ans := range answers {
+				if strings.EqualFold(input, ans) {
+					return input
+				}
+			}
+
+			failMessage("Invalid answer. Try again...")
+		}
+	}
 }
 
 func failMessage(message string) {
 	errMark := fmtStr("✗", RED, true)
-	fmt.Printf("%s %s\n\n", errMark, message)
+	fmt.Printf("%s %s\n", errMark, message)
 }
 
 func successMessage(message string) {
@@ -338,10 +350,9 @@ func checkBPBPanel(url string) error {
 	// 	resp.Body.Close()
 	message := fmt.Sprintf("BPB panel is ready -> %s", fmtStr(url, BLUE, true))
 	successMessage(message)
-	fmt.Print("\n")
-	prompt := fmt.Sprintf("Would you like to open %s in browser? (y/n): ", fmtStr("BPB panel", BLUE, true))
+	prompt := fmt.Sprintf("- Would you like to open %s in browser? (y/n): ", fmtStr("BPB panel", BLUE, true))
 
-	if response := promptUser(prompt); strings.ToLower(response) == "n" {
+	if response := promptUser(prompt, []string{"y", "n"}); strings.ToLower(response) == "n" {
 		return nil
 	}
 
@@ -359,22 +370,19 @@ func runWizard() {
 	renderHeader()
 	fmt.Printf("\n%s Welcome to %s!\n", title, fmtStr("BPB Wizard", GREEN, true))
 	fmt.Printf("%s This wizard will help you to deploy or modify %s on Cloudflare.\n", info, fmtStr("BPB Panel", BLUE, true))
-	fmt.Printf("%s Please make sure you have a verified %s account.\n\n", info, fmtStr("Cloudflare", ORANGE, true))
+	fmt.Printf("%s Please make sure you have a verified %s account.\n", info, fmtStr("Cloudflare", ORANGE, true))
 
 	for {
-		message := fmt.Sprintf("Please enter 1 to %s a new panel or 2 to %s an existing panel: ", fmtStr("CREATE", GREEN, true), fmtStr("MODIFY", RED, true))
-		response := promptUser(message)
+		message := fmt.Sprintf("1- %s a new panel.\n2- %s an existing panel.\n\n- Select: ", fmtStr("CREATE", GREEN, true), fmtStr("MODIFY", RED, true))
+		response := promptUser(message, []string{"1", "2"})
 		switch response {
 		case "1":
 			createPanel()
 		case "2":
 			modifyPanel()
-		default:
-			failMessage("Wrong selection, Please choose 1 or 2 only!")
-			continue
 		}
 
-		res := promptUser("Would you like to run the wizard again? (y/n): ")
+		res := promptUser("- Would you like to run the wizard again? (y/n): ", []string{"y", "n"})
 		if strings.ToLower(res) == "n" {
 			fmt.Printf("\n%s Exiting...\n", title)
 			return
@@ -398,30 +406,23 @@ func createPanel() {
 	}
 
 	fmt.Printf("\n%s Get settings...\n", title)
-	fmt.Printf("\n%s You can use %s or %s to deploy.\n", info, fmtStr("Workers", ORANGE, true), fmtStr("Pages", ORANGE, true))
+	fmt.Printf("\n%s You can use %s or %s method to deploy.\n", info, fmtStr("Workers", ORANGE, true), fmtStr("Pages", ORANGE, true))
 	fmt.Printf("%s %s: If you choose %s, sometimes it takes up to 5 minutes until you can access panel, so please keep calm!\n", info, warning, fmtStr("Pages", ORANGE, true))
 	var deployType DeployType
 
-	for {
-		response := promptUser("Please enter 1 for Workers or 2 for Pages deployment: ")
-		switch response {
-		case "1":
-			deployType = DTWorker
-		case "2":
-			deployType = DTPage
-		default:
-			failMessage("Wrong selection, Please choose 1 or 2 only!")
-			continue
-		}
-
-		break
+	response := promptUser("1- Workers method.\n2- Pages method.\n\n- Select: ", []string{"1", "2"})
+	switch response {
+	case "1":
+		deployType = DTWorker
+	case "2":
+		deployType = DTPage
 	}
 
 	var projectName string
 	for {
 		projectName = generateRandomSubDomain(32)
-		fmt.Printf("\n%s The random generated name (%s) is: %s\n", info, fmtStr("Subdomain", GREEN, true), fmtStr(projectName, ORANGE, true))
-		if response := promptUser("Please enter a custom name or press ENTER to use generated one: "); response != "" {
+		fmt.Printf("\n%s The random generated name (%s) is: %s", info, fmtStr("Subdomain", GREEN, true), fmtStr(projectName, ORANGE, true))
+		if response := promptUser("- Please enter a custom name or press ENTER to use generated one: ", nil); response != "" {
 			if err := isValidSubDomain(response); err != nil {
 				failMessage(err.Error())
 				continue
@@ -440,8 +441,8 @@ func createPanel() {
 		}
 
 		if !isAvailable {
-			prompt := fmt.Sprintf("This already exists! This will %s all panel settings, would you like to override it? (y/n): ", fmtStr("RESET", RED, true))
-			if response := promptUser(prompt); strings.ToLower(response) == "n" {
+			prompt := fmt.Sprintf("- This already exists! This will %s all panel settings, would you like to override it? (y/n): ", fmtStr("RESET", RED, true))
+			if response := promptUser(prompt, []string{"y", "n"}); strings.ToLower(response) == "n" {
 				continue
 			}
 		}
@@ -451,9 +452,9 @@ func createPanel() {
 	}
 
 	uid := uuid.NewString()
-	fmt.Printf("\n%s The random generated %s is: %s\n", info, fmtStr("UUID", GREEN, true), fmtStr(uid, ORANGE, true))
+	fmt.Printf("\n%s The random generated %s is: %s", info, fmtStr("UUID", GREEN, true), fmtStr(uid, ORANGE, true))
 	for {
-		if response := promptUser("Please enter a custom uid or press ENTER to use generated one: "); response != "" {
+		if response := promptUser("- Please enter a custom uid or press ENTER to use generated one: ", nil); response != "" {
 			if _, err := uuid.Parse(response); err != nil {
 				failMessage("UUID is not standard, please try again.")
 				continue
@@ -466,9 +467,9 @@ func createPanel() {
 	}
 
 	trPass := generateTrPassword(12)
-	fmt.Printf("\n%s The random generated %s is: %s\n", info, fmtStr("Trojan password", GREEN, true), fmtStr(trPass, ORANGE, true))
+	fmt.Printf("\n%s The random generated %s is: %s", info, fmtStr("Trojan password", GREEN, true), fmtStr(trPass, ORANGE, true))
 	for {
-		if response := promptUser("Please enter a custom Trojan password or press ENTER to use generated one: "); response != "" {
+		if response := promptUser("- Please enter a custom Trojan password or press ENTER to use generated one: ", nil); response != "" {
 			if !isValidTrPassword(response) {
 				failMessage("Trojan password cannot contain none standard character! Please try again.")
 				continue
@@ -481,9 +482,9 @@ func createPanel() {
 	}
 
 	proxyIP := ""
-	fmt.Printf("\n%s The default %s is: %s\n", info, fmtStr("Proxy IP", GREEN, true), fmtStr("bpb.yousef.isegaro.com", ORANGE, true))
+	fmt.Printf("\n%s The default %s is: %s", info, fmtStr("Proxy IP", GREEN, true), fmtStr("bpb.yousef.isegaro.com", ORANGE, true))
 	for {
-		if response := promptUser("Please enter custom Proxy IP/Domains or press ENTER to use default: "); response != "" {
+		if response := promptUser("- Please enter custom Proxy IP/Domains or press ENTER to use default: ", nil); response != "" {
 			areValid := true
 			values := strings.SplitSeq(response, ",")
 			for v := range values {
@@ -506,9 +507,9 @@ func createPanel() {
 	}
 
 	nat64Prefix := ""
-	fmt.Printf("\n%s The default %s are listed here: %s\n", info, fmtStr("Nat64 Prefixes", GREEN, true), fmtStr("https://github.com/bia-pain-bache/BPB-Worker-Panel/blob/main/NAT64Prefixes.md", ORANGE, true))
+	fmt.Printf("\n%s The default %s are listed here: %s", info, fmtStr("Nat64 Prefixes", GREEN, true), fmtStr("https://github.com/bia-pain-bache/BPB-Worker-Panel/blob/main/NAT64Prefixes.md", ORANGE, true))
 	for {
-		if response := promptUser("Please enter custom NAT64 Prefixes or press ENTER to use default: "); response != "" {
+		if response := promptUser("- Please enter custom NAT64 Prefixes or press ENTER to use default: ", nil); response != "" {
 			areValid := true
 			values := strings.SplitSeq(response, ",")
 			for v := range values {
@@ -531,15 +532,15 @@ func createPanel() {
 	}
 
 	fallback := ""
-	fmt.Printf("\n%s The default %s is: %s\n", info, fmtStr("Fallback domain", GREEN, true), fmtStr("speed.cloudflare.com", ORANGE, true))
-	if response := promptUser("Please enter a custom Fallback domain or press ENTER to use default: "); response != "" {
+	fmt.Printf("\n%s The default %s is: %s", info, fmtStr("Fallback domain", GREEN, true), fmtStr("speed.cloudflare.com", ORANGE, true))
+	if response := promptUser("- Please enter a custom Fallback domain or press ENTER to use default: ", nil); response != "" {
 		fallback = response
 	}
 
 	subPath := generateSubURIPath(16)
-	fmt.Printf("\n%s The random generated %s is: %s\n", info, fmtStr("Subscription path", GREEN, true), fmtStr(subPath, ORANGE, true))
+	fmt.Printf("\n%s The random generated %s is: %s", info, fmtStr("Subscription path", GREEN, true), fmtStr(subPath, ORANGE, true))
 	for {
-		if response := promptUser("Please enter a custom Subscription path or press ENTER to use generated one: "); response != "" {
+		if response := promptUser("- Please enter a custom Subscription path or press ENTER to use generated one: ", nil); response != "" {
 			if !isValidSubURIPath(response) {
 				failMessage("URI cannot contain none standard character! Please try again.")
 				continue
@@ -552,8 +553,8 @@ func createPanel() {
 	}
 
 	var customDomain string
-	fmt.Printf("\n%s You can set %s ONLY if you registered domain on this cloudflare account.\n", info, fmtStr("Custom domain", GREEN, true))
-	if response := promptUser("Please enter a custom domain (if you have any) or press ENTER to ignore: "); response != "" {
+	fmt.Printf("\n%s You can set %s ONLY if you registered domain on this cloudflare account.", info, fmtStr("Custom domain", GREEN, true))
+	if response := promptUser("- Please enter a custom domain (if you have any) or press ENTER to ignore: ", nil); response != "" {
 		customDomain = response
 	}
 
@@ -567,7 +568,7 @@ func createPanel() {
 		if err != nil {
 			failMessage("Failed to create KV.")
 			log.Printf("%v\n\n", err)
-			if response := promptUser("Would you like to try again? (y/n): "); strings.ToLower(response) == "n" {
+			if response := promptUser("- Would you like to try again? (y/n): ", []string{"y", "n"}); strings.ToLower(response) == "n" {
 				return
 			}
 			continue
@@ -660,8 +661,7 @@ func modifyPanel() {
 
 		var index int
 		for {
-			fmt.Println("")
-			response := promptUser("Please select the number you want to modify: ")
+			response := promptUser("- Please select the number you want to modify: ", nil)
 			index, err = strconv.Atoi(response)
 			if err != nil || index < 1 || index > len(panels) {
 				failMessage("Invalid selection, please try again.")
@@ -674,8 +674,8 @@ func modifyPanel() {
 		panelName := panels[index-1].Name
 		panelType := panels[index-1].Type
 
-		message = fmt.Sprintf("Please enter 1 to %s or 2 to %s panel: ", fmtStr("UPDATE", GREEN, true), fmtStr("DELETE", RED, true))
-		response := promptUser(message)
+		message = fmt.Sprintf("1- %s panel.\n2- %s panel.\n\n- Select: ", fmtStr("UPDATE", GREEN, true), fmtStr("DELETE", RED, true))
+		response := promptUser(message, []string{"1", "2"})
 		for {
 			switch response {
 			case "1":
@@ -691,7 +691,7 @@ func modifyPanel() {
 						log.Fatalln(err)
 					}
 
-					successMessage("Panel updated successfully!\n")
+					successMessage("Panel updated successfully!")
 					break
 				}
 
@@ -700,7 +700,7 @@ func modifyPanel() {
 					log.Fatalln(err)
 				}
 
-				successMessage("Panel updated successfully!\n")
+				successMessage("Panel updated successfully!")
 
 			case "2":
 
@@ -710,7 +710,7 @@ func modifyPanel() {
 						log.Fatalln(err)
 					}
 
-					successMessage("Panel deleted successfully!\n")
+					successMessage("Panel deleted successfully!")
 					break
 				}
 
@@ -719,7 +719,7 @@ func modifyPanel() {
 					log.Fatalln(err)
 				}
 
-				successMessage("Panel deleted successfully!\n")
+				successMessage("Panel deleted successfully!")
 
 			default:
 				failMessage("Wrong selection, Please choose 1 or 2 only!")
@@ -729,7 +729,7 @@ func modifyPanel() {
 			break
 		}
 
-		if response := promptUser("Would you like to modify another panel? (y/n): "); strings.ToLower(response) == "n" {
+		if response := promptUser("- Would you like to modify another panel? (y/n): ", []string{"y", "n"}); strings.ToLower(response) == "n" {
 			break
 		}
 	}

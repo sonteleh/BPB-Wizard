@@ -259,12 +259,13 @@ func listPages(ctx context.Context) ([]string, error) {
 	projects, err := cfClient.Pages.Projects.List(ctx, pages.ProjectListParams{
 		AccountID: cf.F(cfAccount.ID),
 	})
+
 	if err != nil {
 		return nil, fmt.Errorf("error listing pages projects: %w", err)
 	}
 
 	if len(projects.Result) == 0 {
-		return nil, fmt.Errorf("no pages projects found")
+		return nil, nil
 	}
 
 	var projectNames []string
@@ -381,7 +382,7 @@ func deployPagesProject(
 		if err != nil {
 			failMessage("Failed to create project.")
 			log.Printf("%v\n\n", err)
-			if response := promptUser("Would you like to try again? (y/n): "); strings.ToLower(response) == "n" {
+			if response := promptUser("- Would you like to try again? (y/n): ", []string{"y", "n"}); strings.ToLower(response) == "n" {
 				return "", nil
 			}
 			continue
@@ -398,7 +399,7 @@ func deployPagesProject(
 		if err != nil {
 			failMessage("Failed to deploy project.")
 			log.Printf("%v\n\n", err)
-			if response := promptUser("Would you like to try again? (y/n): "); strings.ToLower(response) == "n" {
+			if response := promptUser("- Would you like to try again? (y/n): ", []string{"y", "n"}); strings.ToLower(response) == "n" {
 				return "", nil
 			}
 			continue
@@ -414,7 +415,7 @@ func deployPagesProject(
 			if err != nil {
 				failMessage("Failed to add custom domain.")
 				log.Printf("%v\n\n", err)
-				if response := promptUser("Would you like to try again? (y/n): "); strings.ToLower(response) == "n" {
+				if response := promptUser("- Would you like to try again? (y/n): ", []string{"y", "n"}); strings.ToLower(response) == "n" {
 					return "", nil
 				}
 				continue

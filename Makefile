@@ -2,7 +2,7 @@ VER ?= $(VERSION)
 GOOS := $(shell go env GOOS)
 GOARCH := $(shell go env GOARCH)
 
-LDFLAGS = \
+LDFLAGS = -s -w \
 	-X "main.BuildTimestamp=$(shell date -u '+%Y-%m-%d %H:%M:%S')" \
 	-X "main.VERSION=$(VER)" \
 	-X "main.goVersion=$(shell go version | sed -r 's/go version go(.*)\ .*/\1/')"

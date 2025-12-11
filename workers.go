@@ -290,7 +290,7 @@ func listWorkers(ctx context.Context) ([]string, error) {
 	}
 
 	if len(workersList.Result) == 0 {
-		return nil, fmt.Errorf("no workers found")
+		return nil, nil
 	}
 
 	var workerNames []string
@@ -370,7 +370,7 @@ func deployWorker(
 		if err != nil {
 			failMessage("Failed to deploy worker.")
 			log.Printf("%v\n\n", err)
-			if response := promptUser("Would you like to try again? (y/n): "); strings.ToLower(response) == "n" {
+			if response := promptUser("- Would you like to try again? (y/n): ", []string{"y", "n"}); strings.ToLower(response) == "n" {
 				return "", nil
 			}
 			continue
@@ -385,7 +385,7 @@ func deployWorker(
 		if err != nil {
 			failMessage("Failed to enable worker subdomain.")
 			log.Printf("%v\n\n", err)
-			if response := promptUser("Would you like to try again? (y/n): "); strings.ToLower(response) == "n" {
+			if response := promptUser("- Would you like to try again? (y/n): ", []string{"y", "n"}); strings.ToLower(response) == "n" {
 				return "", nil
 			}
 			continue
@@ -401,7 +401,7 @@ func deployWorker(
 			if err != nil {
 				failMessage("Failed to add custom domain.")
 				log.Printf("%v\n\n", err)
-				if response := promptUser("Would you like to try again? (y/n): "); strings.ToLower(response) == "n" {
+				if response := promptUser("- Would you like to try again? (y/n): ", []string{"y", "n"}); strings.ToLower(response) == "n" {
 					return "", nil
 				}
 				continue
